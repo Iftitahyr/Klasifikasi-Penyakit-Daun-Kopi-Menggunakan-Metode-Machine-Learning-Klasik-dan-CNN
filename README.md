@@ -1,5 +1,5 @@
-# Klasifikasi-Penyakit-Daun-Kopi-Menggunakan-Metode-Machine-Learning-Klasik-dan-CNN
-
+# Klasifikasi Penyakit Daun Kopi Menggunakan Metode Machine Learning Klasik, Deep Learning dan Visual Transformer 
+ 
 # Coffee Leaf Disease Classification
 
 Klasifikasi Penyakit Daun Kopi dengan **Machine Learning Klasik & Deep Learning (CNN)**
@@ -316,3 +316,214 @@ Silakan sesuaikan dengan struktur repo kamu, tetapi secara konsep bisa seperti:
 │   └── coffee_leaf_cnn.ipynb
 └── dataset/  (opsional, biasanya di Google Drive)
 ```
+
+Berikut adalah format **README.md** yang telah disesuaikan dengan proyek klasifikasi penyakit daun kopi menggunakan **Visual Transformer** (ViT):
+
+---
+
+# Klasifikasi Penyakit Daun Kopi Menggunakan Visual Transformer (pre-trained)
+
+## Coffee Leaf Disease Classification
+
+Proyek ini membangun sistem klasifikasi citra daun kopi menjadi **3 kelas**:
+
+* `Daun_Sehat` (Healthy)
+* `Daun_Bercak` (Cercospora coffeicola)
+* `Daun_Karat` (Hemileia vastatrix)
+
+Pendekatan yang digunakan:
+
+1. **Visual Transformer (ViT) Pre-trained**
+
+   * Menggunakan model pre-trained **Visual Transformer** dari Google.
+   * Fine-tuning model untuk tugas spesifik klasifikasi penyakit daun kopi.
+
+2. **Data Preprocessing dan Augmentasi**
+
+   * Memproses citra untuk memastikan kualitas data.
+   * Augmentasi data pada dataset pelatihan untuk meningkatkan kemampuan generalisasi model.
+
+---
+
+## 1. Dataset
+
+* Dataset terdiri dari citra daun kopi dengan 3 kelas:
+
+  * **Daun_Sehat**
+  * **Daun_Bercak**
+  * **Daun_Karat**
+
+* Dataset disimpan di Google Drive dan dibagi menjadi:
+
+  * **Train**: 80%
+  * **Validation**: 10%
+  * **Test**: 10%
+
+* Struktur folder akhir:
+
+  ```text
+  dataset_coffee_split/
+  ├── train/
+  │   ├── Daun_Sehat/
+  │   ├── Daun_Bercak/
+  │   └── Daun_Karat/
+  ├── val/
+  │   ├── Daun_Sehat/
+  │   ├── Daun_Bercak/
+  │   └── Daun_Karat/
+  └── test/
+      ├── Daun_Sehat/
+      ├── Daun_Bercak/
+      └── Daun_Karat/
+  ```
+
+Script untuk melakukan pembagian dataset (splitting) menggunakan library `splitfolders`:
+
+```python
+splitfolders.ratio(
+    original_dataset_path,
+    output=output_split_path,
+    seed=42,
+    ratio=(0.8, 0.1, 0.1),
+    move=False
+)
+```
+
+---
+
+## 2. Data Preprocessing
+
+### 2.1. Visualisasi dan Preprocessing Gambar
+
+Sebelum pelatihan, data citra diproses dengan langkah-langkah berikut:
+
+* **Visualisasi**: Menampilkan contoh gambar dari setiap kelas untuk memastikan distribusi yang seimbang.
+* **Pembersihan Data**: Menghapus gambar yang buram dengan menggunakan modul PIL untuk mendeteksi ketajaman gambar.
+* **Resize dan Normalisasi**: Mengubah ukuran gambar menjadi **224x224** piksel dan menormalkan nilai piksel ke rentang **[0, 1]**.
+
+```python
+sizes, modes = [], []
+for cls in classes:
+    class_folder = os.path.join(data_root, 'train', cls)
+    for f in os.listdir(class_folder)[:15]:
+        img_path = os.path.join(class_folder, f)
+        with Image.open(img_path) as img:
+            sizes.append(img.size)
+            modes.append(img.mode)
+sizes = np.array(sizes)
+```
+
+### 2.2. Augmentasi Data
+
+Augmentasi dilakukan hanya pada dataset **training** untuk meningkatkan keberagaman data dan mengurangi overfitting, dengan menggunakan teknik berikut:
+
+* **Flip Horizontal dan Vertical**
+* **Random Rotation** hingga 30 derajat
+* **Color Jitter** (brightness, contrast, saturation)
+* **Zoom** ringan
+
+```python
+train_augment = T.Compose([
+    T.RandomHorizontalFlip(p=0.5),
+    T.RandomVerticalFlip(p=0.5),
+    T.ColorJitter(brightness=0.4, contrast=0.5, saturation=0.4),
+    T.RandomRotation(30),
+])
+```
+
+---
+
+## 3. Model Training dengan Visual Transformer (ViT)
+
+### 3.1. Memuat Model Pre-trained
+
+Untuk tugas ini, kami menggunakan model **Visual Transformer (ViT)** yang telah dilatih sebelumnya pada dataset **ImageNet** dan kemudian di-fine-tune untuk klasifikasi tiga kelas daun kopi.
+
+```python
+model_name = 'google/vit-base-patch16-224-in21k'
+image_processor = ViTImageProcessor.from_pretrained(model_name)
+model = ViTForImageClassification.from_pretrained(
+    model_name,
+    num_labels=len(labels),
+    id2label={str(i): lbl for i, lbl in enumerate(labels)},
+    label2id={lbl: str(i) for i, lbl in enumerate(labels)}
+)
+```
+
+### 3.2. Pelatihan Model
+
+Model dilatih dengan **batch size 16** dan **learning rate 3e-5** selama 5 epoch. Pelatihan menggunakan **Trainer** dari **HuggingFace** dengan pengukuran metrik **accuracy**.
+
+```python
+trainer = Trainer(
+    model=model,
+    args=training_args,
+    train_dataset=prepared_ds["train"],
+    eval_dataset=prepared_ds["validation"],
+    tokenizer=image_processor,
+    compute_metrics=compute_metrics,
+)
+trainer.train()
+```
+
+### 3.3. Evaluasi Model
+
+Evaluasi dilakukan pada **dataset test** untuk memperoleh hasil dari **classification report** dan **confusion matrix**:
+
+```python
+cm = confusion_matrix(true_labels, preds)
+sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=labels, yticklabels=labels)
+plt.xlabel('Prediksi Model')
+plt.ylabel('Label Asli (Aktual)')
+plt.title('Confusion Matrix - Klasifikasi Penyakit Daun Kopi')
+plt.show()
+```
+
+---
+
+## 4. Hasil Model
+
+Evaluasi pada **450 citra uji** menghasilkan **Test Accuracy ≈ 95%**. Berikut adalah **classification report** yang menunjukkan kinerja model pada masing-masing kelas:
+
+* `Daun_Bercak`: Precision 0.97, Recall 0.92, F1-Score 0.94
+* `Daun_Karat`: Precision 0.93, Recall 0.95, F1-Score 0.94
+* `Daun_Sehat`: Precision 0.96, Recall 0.98, F1-Score 0.97
+
+Model ini menunjukkan stabilitas yang baik di seluruh kelas daun kopi.
+
+---
+
+## 5. Cara Menjalankan
+
+Proyek ini dikembangkan di **Google Colab**, namun Anda dapat menjalankannya di lingkungan lokal dengan sedikit penyesuaian pada path.
+
+### 5.1. Kebutuhan Paket
+
+Buat file `requirements.txt` yang berisi daftar paket yang dibutuhkan, seperti:
+
+```txt
+transformers
+datasets
+timm
+scikit-learn
+torch
+pandas
+matplotlib
+seaborn
+opencv-python
+```
+
+Lalu install paket-paket yang dibutuhkan dengan perintah:
+
+```bash
+pip install -r requirements.txt
+```
+
+### 5.2. Langkah-langkah untuk Menjalankan
+
+1. **Menyiapkan Dataset**: Pastikan dataset sudah di-split ke dalam folder dengan struktur yang benar.
+2. **Pelatihan Model**: Jalankan script untuk melatih model menggunakan **Visual Transformer**.
+3. **Evaluasi**: Evaluasi model pada test set dan tampilkan hasil confusion matrix serta classification report.
+4. **Prediksi Gambar**: Coba prediksi gambar daun kopi dengan mengunggah citra menggunakan antarmuka yang disediakan.
+
+---
