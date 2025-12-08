@@ -1,8 +1,8 @@
-# Klasifikasi Penyakit Daun Kopi Menggunakan Metode Machine Learning Klasik, Deep Learning dan Visual Transformer 
- 
+# Klasifikasi Penyakit Daun Kopi Menggunakan Metode Machine Learning Klasik, Deep Learning dan Visual Transformer
+
 # Coffee Leaf Disease Classification
 
-Klasifikasi Penyakit Daun Kopi dengan **Machine Learning Klasik & Deep Learning (CNN)**
+Klasifikasi Penyakit Daun Kopi dengan **Machine Learning Klasik, Deep Learning (CNN), dan Visual Transformer (ViT + LoRA + XAI)**
 
 Proyek ini membangun sistem klasifikasi citra daun kopi menjadi **3 kelas**:
 
@@ -22,6 +22,12 @@ Pendekatan yang digunakan:
 
    * CNN dari awal (no transfer learning).
    * Augmentasi data dengan `ImageDataGenerator`.
+
+3. **Visual Transformer (ViT) + LoRA + XAI**
+
+   * Fine-tuning **Vision Transformer (ViT)** pre-trained (`google/vit-base-patch16-224-in21k`) untuk klasifikasi daun kopi.
+   * **LoRA (Low-Rank Adaptation)** untuk fine-tuning yang lebih ringan dan efisien.
+   * **Explainable AI (XAI)** dengan **Grad-CAM** dan penjelasan tekstual tambahan via **Groq LLM**.
 
 ---
 
@@ -251,6 +257,12 @@ matplotlib
 seaborn
 scikit-image
 split-folders
+transformers
+datasets
+timm
+torch
+peft
+groq
 ```
 
 Lalu install:
@@ -301,6 +313,19 @@ pip install -r requirements.txt
    best_coffee_leaf_cnn_model.h5
    ```
 
+### 4.4. Visual Transformer (ViT), LoRA, dan XAI
+
+1. Pastikan struktur folder dataset sama (`dataset_coffee_split`).
+2. Jalankan notebook **ViT / XAI + LoRA**, yang mencakup:
+
+   * EDA dataset (distribusi kelas, contoh gambar, histogram warna, cek blur).
+   * Preprocessing & augmentasi untuk train set (flip, rotation, color jitter).
+   * Fine-tuning ViT dengan `Trainer` (HuggingFace).
+   * Fine-tuning lanjutan menggunakan **LoRA (PEFT)** pada checkpoint ViT yang sudah dilatih.
+   * Evaluasi model ViT dan ViT+LoRA (accuracy, classification report, confusion matrix).
+   * Penerapan **Grad-CAM** pada model ViT/LoRA untuk highlight area penting pada daun.
+   * Integrasi dengan **Groq API (LLM)** untuk memberikan penjelasan penyakit dalam bentuk teks.
+
 ---
 
 ## 5. Struktur (Contoh)
@@ -314,216 +339,194 @@ Silakan sesuaikan dengan struktur repo kamu, tetapi secara konsep bisa seperti:
 │   └── coffee_leaf_ml_classic.ipynb
 ├── deep_learning/
 │   └── coffee_leaf_cnn.ipynb
+├── vit_lora_xai/
+│   └── XAI_LoRA_ViT_daun_kopi.ipynb
 └── dataset/  (opsional, biasanya di Google Drive)
 ```
 
-Berikut adalah format **README.md** yang telah disesuaikan dengan proyek klasifikasi penyakit daun kopi menggunakan **Visual Transformer** (ViT):
-
 ---
 
-# Klasifikasi Penyakit Daun Kopi Menggunakan Visual Transformer (pre-trained)
+## 6. Visual Transformer (ViT) & LoRA
 
-## Coffee Leaf Disease Classification
+### 6.1. Overview
 
-Proyek ini membangun sistem klasifikasi citra daun kopi menjadi **3 kelas**:
+Pada tahap ini digunakan **Vision Transformer (ViT)** sebagai model berbasis **Transformers untuk citra**, dengan alur:
 
-* `Daun_Sehat` (Healthy)
-* `Daun_Bercak` (Cercospora coffeicola)
-* `Daun_Karat` (Hemileia vastatrix)
+* Load model pre-trained `google/vit-base-patch16-224-in21k`.
+* Fine-tuning pada dataset daun kopi (3 kelas).
+* Menyimpan checkpoint terbaik berdasarkan akurasi.
+* Melanjutkan fine-tuning dengan **LoRA** untuk efisiensi parameter.
 
-Pendekatan yang digunakan:
+### 6.2. Preprocessing & Augmentasi untuk ViT
 
-1. **Visual Transformer (ViT) Pre-trained**
+* Seluruh gambar dikonversi ke **RGB** dan di-*resize* otomatis oleh `ViTImageProcessor`.
+* Distribusi kelas divisualisasikan (bar chart + pie chart).
+* Contoh gambar dari tiap kelas ditampilkan.
+* Cek kualitas gambar:
 
-   * Menggunakan model pre-trained **Visual Transformer** dari Google.
-   * Fine-tuning model untuk tugas spesifik klasifikasi penyakit daun kopi.
+  * Histogram warna (RGB) per kelas.
+  * Deteksi gambar buram menggunakan standar deviasi intensitas grayscale.
+* Augmentasi training menggunakan:
 
-2. **Data Preprocessing dan Augmentasi**
-
-   * Memproses citra untuk memastikan kualitas data.
-   * Augmentasi data pada dataset pelatihan untuk meningkatkan kemampuan generalisasi model.
-
----
-
-## 1. Dataset
-
-* Dataset terdiri dari citra daun kopi dengan 3 kelas:
-
-  * **Daun_Sehat**
-  * **Daun_Bercak**
-  * **Daun_Karat**
-
-* Dataset disimpan di Google Drive dan dibagi menjadi:
-
-  * **Train**: 80%
-  * **Validation**: 10%
-  * **Test**: 10%
-
-* Struktur folder akhir:
-
-  ```text
-  dataset_coffee_split/
-  ├── train/
-  │   ├── Daun_Sehat/
-  │   ├── Daun_Bercak/
-  │   └── Daun_Karat/
-  ├── val/
-  │   ├── Daun_Sehat/
-  │   ├── Daun_Bercak/
-  │   └── Daun_Karat/
-  └── test/
-      ├── Daun_Sehat/
-      ├── Daun_Bercak/
-      └── Daun_Karat/
+  ```python
+  train_augment = T.Compose([
+      T.RandomHorizontalFlip(p=0.5),
+      T.RandomVerticalFlip(p=0.5),
+      T.ColorJitter(brightness=0.4, contrast=0.5, saturation=0.4),
+      T.RandomRotation(30),
+  ])
   ```
 
-Script untuk melakukan pembagian dataset (splitting) menggunakan library `splitfolders`:
+### 6.3. Training ViT
 
-```python
-splitfolders.ratio(
-    original_dataset_path,
-    output=output_split_path,
-    seed=42,
-    ratio=(0.8, 0.1, 0.1),
-    move=False
-)
-```
+* Model: `ViTForImageClassification`.
 
----
+* Optimizer & scheduler dikelola otomatis oleh `Trainer`.
 
-## 2. Data Preprocessing
+* Hyperparameter kunci:
 
-### 2.1. Visualisasi dan Preprocessing Gambar
+  * `batch_size = 16`
+  * `num_train_epochs = 5`
+  * `learning_rate = 3e-5`
+  * `metric_for_best_model = 'accuracy'`
+  * `load_best_model_at_end = True`
 
-Sebelum pelatihan, data citra diproses dengan langkah-langkah berikut:
+* Evaluasi:
 
-* **Visualisasi**: Menampilkan contoh gambar dari setiap kelas untuk memastikan distribusi yang seimbang.
-* **Pembersihan Data**: Menghapus gambar yang buram dengan menggunakan modul PIL untuk mendeteksi ketajaman gambar.
-* **Resize dan Normalisasi**: Mengubah ukuran gambar menjadi **224x224** piksel dan menormalkan nilai piksel ke rentang **[0, 1]**.
+  * Akurasi test set
+  * `classification_report` (precision, recall, F1-score per kelas)
+  * Confusion matrix (heatmap)
 
-```python
-sizes, modes = [], []
-for cls in classes:
-    class_folder = os.path.join(data_root, 'train', cls)
-    for f in os.listdir(class_folder)[:15]:
-        img_path = os.path.join(class_folder, f)
-        with Image.open(img_path) as img:
-            sizes.append(img.size)
-            modes.append(img.mode)
-sizes = np.array(sizes)
-```
+### 6.4. Fine-Tuning dengan LoRA
 
-### 2.2. Augmentasi Data
+* Checkpoint terbaik ViT (hasil training full) diekstrak dari zip (`vit-daunkopi-checkpoints.zip`).
 
-Augmentasi dilakukan hanya pada dataset **training** untuk meningkatkan keberagaman data dan mengurangi overfitting, dengan menggunakan teknik berikut:
+* LoRA dikonfigurasikan dengan:
 
-* **Flip Horizontal dan Vertical**
-* **Random Rotation** hingga 30 derajat
-* **Color Jitter** (brightness, contrast, saturation)
-* **Zoom** ringan
+  ```python
+  lora_config = LoraConfig(
+      task_type=TaskType.IMAGE_CLASSIFICATION,
+      r=8,
+      lora_alpha=16,
+      lora_dropout=0.1,
+      target_modules=["query", "key", "value"]
+  )
+  ```
 
-```python
-train_augment = T.Compose([
-    T.RandomHorizontalFlip(p=0.5),
-    T.RandomVerticalFlip(p=0.5),
-    T.ColorJitter(brightness=0.4, contrast=0.5, saturation=0.4),
-    T.RandomRotation(30),
-])
-```
+* Model ViT dibungkus menjadi **PeftModel** (ViT + LoRA).
 
----
+* Hanya subset kecil parameter yang dilatih, sehingga:
 
-## 3. Model Training dengan Visual Transformer (ViT)
+  * Training lebih cepat.
+  * Konsumsi memori lebih ringan.
+  * Performa tetap sangat tinggi.
 
-### 3.1. Memuat Model Pre-trained
+* Training LoRA:
 
-Untuk tugas ini, kami menggunakan model **Visual Transformer (ViT)** yang telah dilatih sebelumnya pada dataset **ImageNet** dan kemudian di-fine-tune untuk klasifikasi tiga kelas daun kopi.
+  * `num_train_epochs = 3`
+  * `learning_rate = 1e-4`
+  * Metode evaluasi sama (accuracy di validation dan test).
 
-```python
-model_name = 'google/vit-base-patch16-224-in21k'
-image_processor = ViTImageProcessor.from_pretrained(model_name)
-model = ViTForImageClassification.from_pretrained(
-    model_name,
-    num_labels=len(labels),
-    id2label={str(i): lbl for i, lbl in enumerate(labels)},
-    label2id={lbl: str(i) for i, lbl in enumerate(labels)}
-)
-```
+### 6.5. Hasil ViT + LoRA
 
-### 3.2. Pelatihan Model
+* ViT full fine-tune memberikan akurasi test tinggi (≈95%+).
+* ViT + LoRA menghasilkan:
 
-Model dilatih dengan **batch size 16** dan **learning rate 3e-5** selama 5 epoch. Pelatihan menggunakan **Trainer** dari **HuggingFace** dengan pengukuran metrik **accuracy**.
+  * Akurasi test set ≈ **96–97%**.
+  * Precision, recall, dan F1-score seimbang antar kelas.
+* LoRA terbukti:
 
-```python
-trainer = Trainer(
-    model=model,
-    args=training_args,
-    train_dataset=prepared_ds["train"],
-    eval_dataset=prepared_ds["validation"],
-    tokenizer=image_processor,
-    compute_metrics=compute_metrics,
-)
-trainer.train()
-```
-
-### 3.3. Evaluasi Model
-
-Evaluasi dilakukan pada **dataset test** untuk memperoleh hasil dari **classification report** dan **confusion matrix**:
-
-```python
-cm = confusion_matrix(true_labels, preds)
-sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=labels, yticklabels=labels)
-plt.xlabel('Prediksi Model')
-plt.ylabel('Label Asli (Aktual)')
-plt.title('Confusion Matrix - Klasifikasi Penyakit Daun Kopi')
-plt.show()
-```
+  * Menghemat parameter yang dilatih.
+  * Meningkatkan atau mempertahankan performa model.
+  * Cocok untuk scenario fine-tuning lanjutan atau deployment resource terbatas.
 
 ---
 
-## 4. Hasil Model
+## 7. Explainable AI (XAI): Grad-CAM & Groq LLM
 
-Evaluasi pada **450 citra uji** menghasilkan **Test Accuracy ≈ 95%**. Berikut adalah **classification report** yang menunjukkan kinerja model pada masing-masing kelas:
+### 7.1. Grad-CAM untuk ViT / LoRA
 
-* `Daun_Bercak`: Precision 0.97, Recall 0.92, F1-Score 0.94
-* `Daun_Karat`: Precision 0.93, Recall 0.95, F1-Score 0.94
-* `Daun_Sehat`: Precision 0.96, Recall 0.98, F1-Score 0.97
+Untuk menjelaskan **mengapa** model memprediksi suatu kelas (bukan hanya **apa** hasil prediksinya), digunakan **Grad-CAM** yang dimodifikasi untuk arsitektur ViT:
 
-Model ini menunjukkan stabilitas yang baik di seluruh kelas daun kopi.
+* Hook dipasang pada layer encoder terakhir ViT (`vit.encoder.layer[-1].output`).
+
+* Saat forward-backward:
+
+  * Disimpan **activations** dan **gradients**.
+  * Dibuat peta pentingnya (Class Activation Map) berdasarkan rata-rata gradien dan aktivasi.
+  * Token CLS diabaikan, hanya patch token yang dipakai.
+  * Peta 1D di-*reshape* ke bentuk 2D (grid patch), lalu di-*resize* ke ukuran gambar asli.
+
+* Hasil Grad-CAM di-*overlay* di atas gambar daun:
+
+  * Daerah yang paling berkontribusi pada prediksi akan tampak berwarna lebih “panas” (merah/kuning).
+  * Sangat membantu untuk melihat apakah model fokus ke area bercak, karat, atau bagian lain.
+
+### 7.2. Penjelasan Berbasis Aturan (Rule-Based XAI)
+
+Di dalam kelas `VitGradCAM` tersedia juga fungsi:
+
+* `generate_xai_explanation(label_idx)` yang mengembalikan penjelasan singkat per kelas:
+
+  * `Daun_Bercak` → bercak coklat akibat jamur.
+  * `Daun_Karat` → karat daun oleh *Hemileia vastatrix*.
+  * `Daun_Sehat` → daun hijau tanpa gejala penyakit.
+
+Penjelasan ini dapat digunakan sebagai deskripsi singkat untuk pengguna akhir (misalnya petani atau praktisi kebun).
+
+### 7.3. Integrasi Groq LLM untuk Penjelasan Mendalam
+
+Untuk penjelasan yang lebih kaya dan naratif, digunakan **Groq API** dengan model **`llama-3.3-70b-versatile`**:
+
+* Fungsi `get_additional_explanation(disease_name)`:
+
+  * Mengirim prompt:
+    `"Jelaskan secara mendalam mengenai penyakit {disease_name} pada tanaman kopi dan bagaimana cara menanganinya."`
+  * Model kemudian mengembalikan penjelasan panjang terkait:
+
+    * Penyebab penyakit.
+    * Gejala visual pada daun.
+    * Dampak ke tanaman.
+    * Rekomendasi penanganan dan pencegahan.
+
+* Fungsi `generate_xai_explanation(predicted_label)`:
+
+  * Menggabungkan:
+
+    * Penjelasan singkat (rule-based).
+    * Penjelasan panjang hasil Groq (LLM).
+
+### 7.4. Pipeline XAI Lengkap
+
+Fungsi `explain_with_gradcam_and_xai(image, model_lora, image_processor)` melakukan:
+
+1. Prediksi kelas gambar daun kopi dengan model ViT + LoRA.
+
+2. Menghasilkan **Grad-CAM** dan menampilkan overlay pada gambar.
+
+3. Mengambil:
+
+   * Nama penyakit.
+   * Penjelasan singkat (rule-based).
+   * Penjelasan tambahan dari Groq (LLM).
+
+4. Menampilkan:
+
+   * Gambar asli.
+   * Peta Grad-CAM (heatmap).
+   * Overlay Grad-CAM + gambar.
+   * Teks penjelasan penyakit + cara penanganan.
+
+Dengan demikian, sistem tidak hanya melakukan klasifikasi, tetapi juga:
+
+* Menjelaskan **area mana di daun** yang menjadi dasar keputusan model.
+* Memberikan **penjelasan teks yang mudah dipahami** tentang penyakit dan langkah penanganannya.
 
 ---
 
-## 5. Cara Menjalankan
+Repo ini dengan demikian mencakup:
 
-Proyek ini dikembangkan di **Google Colab**, namun Anda dapat menjalankannya di lingkungan lokal dengan sedikit penyesuaian pada path.
-
-### 5.1. Kebutuhan Paket
-
-Buat file `requirements.txt` yang berisi daftar paket yang dibutuhkan, seperti:
-
-```txt
-transformers
-datasets
-timm
-scikit-learn
-torch
-pandas
-matplotlib
-seaborn
-opencv-python
-```
-
-Lalu install paket-paket yang dibutuhkan dengan perintah:
-
-```bash
-pip install -r requirements.txt
-```
-
-### 5.2. Langkah-langkah untuk Menjalankan
-
-1. **Menyiapkan Dataset**: Pastikan dataset sudah di-split ke dalam folder dengan struktur yang benar.
-2. **Pelatihan Model**: Jalankan script untuk melatih model menggunakan **Visual Transformer**.
-3. **Evaluasi**: Evaluasi model pada test set dan tampilkan hasil confusion matrix serta classification report.
-4. **Prediksi Gambar**: Coba prediksi gambar daun kopi dengan mengunggah citra menggunakan antarmuka yang disediakan.
-
----
+* **ML Klasik** → fitur rekayasa + ensemble.
+* **CNN** → end-to-end deep learning dari citra ke label.
+* **ViT + LoRA** → model transformer modern yang efisien.
+* **XAI (Grad-CAM + Groq)** → transparansi dan interpretabilitas untuk pengguna akhir.
